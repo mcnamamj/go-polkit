@@ -1,4 +1,4 @@
-module github.com/amenzhinsky/go-polkit
+module github.com/mcnamamj/go-polkit
 
 go 1.16
 

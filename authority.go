@@ -1,6 +1,10 @@
 package polkit
 
 import (
+	"context"
+	"fmt"
+	"time"
+
 	"github.com/godbus/dbus/v5"
 )
 
@@ -107,13 +111,40 @@ func (a *Authority) CheckAuthorization(
 	actionID string,
 	details map[string]string,
 	flags uint32,
-	cancellationID string) (*PKAuthorizationResult, error) {
+	cancellationID string,
+	timeout ...int) (*PKAuthorizationResult, error) {
 	result := PKAuthorizationResult{}
-	if err := a.call("CheckAuthorization", &result, a.subject, actionID, details, flags, cancellationID); err != nil {
+	actualTimeout := 25
+	if len(timeout) > 0 {
+		actualTimeout = timeout[0]
+	}
+	err := a.callWithTimeout("CheckAuthorization", &result, actualTimeout, a.subject, actionID, details, flags, cancellationID)
+	if err != nil {
+		if err == context.DeadlineExceeded {
+			return nil, fmt.Errorf("authorization check timed out after %d seconds", timeout)
+		}
 		return nil, err
 	}
 
 	return &result, nil
+}
+
+func (a *Authority) callWithTimeout(action string, result interface{}, timeout int, args ...interface{}) error {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeout)*time.Second)
+	defer cancel()
+
+	call := a.object.CallWithContext(ctx, "org.freedesktop.PolicyKit1.Authority."+action, 0, args...)
+	if call.Err != nil {
+		return call.Err
+	}
+
+	if result != nil {
+		if err := call.Store(result); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (a *Authority) CancelCheckAuthorization(cancellationID string) error {
